@@ -1,0 +1,21 @@
+@Host = http://localhost:8080
+
+### Ask the semantic cache
+POST {{Host}}/api/langcache/ask HTTP/1.1
+Content-Type: application/json
+
+{
+    "question": "How do I reset my password?"
+}
+
+### Ask a related follow-up question
+
+POST {{Host}}/api/langcache/ask HTTP/1.1
+Content-Type: application/json
+
+{
+    "question": "I forgot how to change my login password."
+}
+
+### Read cache stats
+GET {{Host}}/api/langcache/stats HTTP/1.1

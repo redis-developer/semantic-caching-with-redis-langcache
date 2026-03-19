@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.*_cache
+.coverage
+htmlcov
+.venv
+.env
+.env.*

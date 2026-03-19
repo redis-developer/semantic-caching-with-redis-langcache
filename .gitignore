@@ -1,0 +1,12 @@
+.agents
+# Python
+__pycache__
+*.pyc
+.*_cache
+.coverage
+htmlcov
+.venv
+.env
+.env.*
+!.env.docker
+!.env.example
