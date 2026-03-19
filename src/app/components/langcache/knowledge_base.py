@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.components.langcache.embedding import embed_text, cosine_similarity
+from app.components.langcache.embedding import cosine_similarity, embed_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,9 @@ def build_knowledge_base() -> list[KnowledgeBaseEntry]:
 KNOWLEDGE_BASE = build_knowledge_base()
 
 
-def choose_best_knowledge_answer(question: str) -> tuple[KnowledgeBaseEntry | None, float]:
+def choose_best_knowledge_answer(
+    question: str,
+) -> tuple[KnowledgeBaseEntry | None, float]:
     question_embedding = embed_text(question)
     best_entry: KnowledgeBaseEntry | None = None
     best_similarity = 0.0
@@ -49,4 +51,3 @@ def choose_best_knowledge_answer(question: str) -> tuple[KnowledgeBaseEntry | No
             best_entry = entry
 
     return best_entry, best_similarity
-

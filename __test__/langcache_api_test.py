@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from redis.exceptions import ResponseError
 
 from app.components.langcache.store import reset_langcache_store
 from app.config import get_settings
@@ -21,22 +20,11 @@ def _reset_cache_state() -> None:
 
     redis.delete(STATS_KEY)
 
-    try:
-        redis.ft("langcache-idx").dropindex()
-    except ResponseError as exc:
-        if "Unknown index name" not in str(exc) and "no such index" not in str(exc):
-            raise
-
-
-def _stats_snapshot() -> dict[str, str]:
-    return redis.hgetall(STATS_KEY)
-
 
 def test_semantic_cache_hits_on_follow_up_question():
     _reset_cache_state()
 
     with TestClient(app, raise_server_exceptions=False) as client:
-
         first = client.post(
             "/api/langcache/ask",
             json={"question": "How do I reset my password?"},
@@ -67,7 +55,6 @@ def test_semantic_cache_stats_track_entries_and_hit_rate():
     _reset_cache_state()
 
     with TestClient(app, raise_server_exceptions=False) as client:
-
         client.post("/api/langcache/ask", json={"question": "Where is my invoice?"})
         client.post(
             "/api/langcache/ask",

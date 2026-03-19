@@ -46,5 +46,11 @@ def get_sync_client(url: str | None = None) -> SyncRedis:
     return sync_clients[redis_url]
 
 
+async def close_async_clients() -> None:
+    for client in async_clients.values():
+        await client.aclose()
+    async_clients.clear()
+
+
 def reset_async_clients() -> None:
     async_clients.clear()

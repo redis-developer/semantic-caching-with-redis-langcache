@@ -3,7 +3,7 @@ from os import environ
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 load_dotenv()
 
@@ -14,7 +14,7 @@ LogLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 class Settings(BaseModel):
     app_env: AppEnv = Field(
         default="development",
-        validation_alias=AliasChoices("APP_ENV", "NODE_ENV"),
+        validation_alias="APP_ENV",
     )
     port: int = Field(default=8080, validation_alias="PORT")
     redis_url: str = Field(

@@ -146,6 +146,3 @@ def get_logger(name: str = "app") -> logging.Logger:
 
 def get_component_logger(component: str) -> ComponentLoggerAdapter:
     return ComponentLoggerAdapter(get_logger(), {"component": component})
-
-
-logger = get_logger()

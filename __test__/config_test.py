@@ -22,4 +22,3 @@ def test_settings_read_langcache_overrides(monkeypatch: pytest.MonkeyPatch):
     assert settings.langcache_ttl_seconds == 120
     assert settings.langcache_cache_threshold == 0.75
     assert settings.langcache_knowledge_threshold == 0.25
-

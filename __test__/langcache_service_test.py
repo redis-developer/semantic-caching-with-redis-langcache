@@ -14,4 +14,3 @@ def test_embedding_is_lower_for_unrelated_questions():
     shipping_update = embed_text("Where is my package?")
 
     assert cosine_similarity(password_reset, shipping_update) < 0.6
-

@@ -1,2 +1,1 @@
 """Semantic cache demo component."""
-

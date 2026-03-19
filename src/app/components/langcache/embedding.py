@@ -61,6 +61,8 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_magnitude == 0 or right_magnitude == 0:
         return 0.0
 
-    dot_product = sum(left_value * right_value for left_value, right_value in zip(left, right))
+    dot_product = sum(
+        left_value * right_value
+        for left_value, right_value in zip(left, right, strict=True)
+    )
     return dot_product / (left_magnitude * right_magnitude)
-

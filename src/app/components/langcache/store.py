@@ -15,12 +15,9 @@ from app.redis import get_client, reset_async_clients
 
 CACHE_PREFIX = "langcache:entry:"
 STATS_KEY = "langcache:stats"
-DEFAULT_TTL_SECONDS = 3600
-DEFAULT_CACHE_THRESHOLD = 0.65
-DEFAULT_KNOWLEDGE_THRESHOLD = 0.35
 
 logger = get_component_logger("langcache")
-langcache_store: "LangCacheStore | None" = None
+langcache_store: LangCacheStore | None = None
 
 
 class LangCacheStore:
@@ -28,17 +25,14 @@ class LangCacheStore:
         self,
         redis: Redis,
         *,
-        ttl_seconds: int = DEFAULT_TTL_SECONDS,
-        cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
-        knowledge_threshold: float = DEFAULT_KNOWLEDGE_THRESHOLD,
+        ttl_seconds: int,
+        cache_threshold: float,
+        knowledge_threshold: float,
     ) -> None:
         self.redis = redis
         self.ttl_seconds = ttl_seconds
         self.cache_threshold = cache_threshold
         self.knowledge_threshold = knowledge_threshold
-
-    async def initialize(self) -> None:
-        await self._ensure_stats()
 
     async def _ensure_stats(self) -> None:
         existing = await self.redis.hgetall(STATS_KEY)
@@ -93,12 +87,12 @@ class LangCacheStore:
         *,
         question: str,
         answer: str,
+        embedding: list[float],
         matched_prompt: str | None,
         similarity: float,
     ) -> tuple[str, int]:
         created_at = datetime.now(UTC).isoformat()
         cache_key = f"{CACHE_PREFIX}{uuid4()}"
-        embedding = embed_text(question)
 
         await self.redis.hset(
             cache_key,
@@ -172,6 +166,7 @@ class LangCacheStore:
         cache_key, hit_count = await self._save_entry(
             question=question,
             answer=answer,
+            embedding=question_embedding,
             matched_prompt=matched_prompt,
             similarity=round(fallback_similarity, 3),
         )
