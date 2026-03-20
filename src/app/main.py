@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.components.langcache.router import router as langcache_router
+from app.components.langcache.store import get_lang_cache_client
 from app.errors import ClientError
 from app.logger import configure_logging, get_logger
 from app.redis import close_async_clients
@@ -21,7 +22,8 @@ def _validation_message(exc: ValidationError | RequestValidationError) -> str:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
-    yield
+    async with get_lang_cache_client():
+        yield
     await close_async_clients()
 
 

@@ -9,5 +9,4 @@ htmlcov
 .venv
 .env
 .env.*
-!.env.docker
 !.env.example

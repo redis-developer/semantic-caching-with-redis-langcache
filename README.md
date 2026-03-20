@@ -1,6 +1,7 @@
-This is a [Redis](https://redis.io/) semantic caching demo for Python using:
+This is a [Redis LangCache](https://redis.io/docs/latest/develop/ai/langcache/) semantic caching demo for Python using:
 
 - [Redis Cloud](https://redis.io/try-free/)
+- [LangCache Python SDK](https://pypi.org/project/langcache/)
 - [FastAPI](https://fastapi.tiangolo.com/)
 
 ## Requirements
@@ -19,7 +20,12 @@ Copy and edit the `.env` file:
 cp .env.example .env
 ```
 
-Your `.env` file should contain the connection string you copied from Redis Cloud.
+Your `.env` file needs three things:
+
+1. A Redis Cloud connection string (`REDIS_URL`)
+2. LangCache service credentials (`LANGCACHE_API_URL`, `LANGCACHE_CACHE_ID`, `LANGCACHE_API_KEY`)
+
+See [Connecting to Redis Cloud](#connecting-to-redis-cloud) and [Setting up LangCache](#setting-up-langcache) for details.
 
 Available settings:
 
@@ -28,7 +34,9 @@ Available settings:
 - `LOG_STREAM_KEY=logs`
 - `PORT=8080`
 - `REDIS_URL=redis://...`
-- `LANGCACHE_TTL_SECONDS=3600`
+- `LANGCACHE_API_URL=https://...`
+- `LANGCACHE_CACHE_ID=your-cache-id`
+- `LANGCACHE_API_KEY=your-api-key`
 - `LANGCACHE_CACHE_THRESHOLD=0.65`
 - `LANGCACHE_KNOWLEDGE_THRESHOLD=0.35`
 
@@ -39,6 +47,9 @@ APP_ENV=production
 LOG_LEVEL=INFO
 LOG_STREAM_KEY=logs
 REDIS_URL="redis://redis:6379"
+LANGCACHE_API_URL="https://your-langcache-host"
+LANGCACHE_CACHE_ID="your-cache-id"
+LANGCACHE_API_KEY="your-api-key"
 ```
 
 Next, spin up docker containers:
@@ -54,11 +65,20 @@ You should have a server running on `http://localhost:<port>` where the port is 
 
 The answer payload includes:
 
-- `cacheHit`
-- `matchedPrompt`
-- `similarity`
-- `cacheKey`
-- `ttlSeconds`
+- `cacheHit` - whether LangCache returned a cached response
+- `matchedPrompt` - the prompt that matched the query
+- `similarity` - how similar the query was to the matched prompt
+- `entryId` - the LangCache entry ID
+- `source` - `"cache"` for hits, `"knowledge_base"` for misses
+
+## How it works
+
+1. A user sends a question to the `/api/langcache/ask` endpoint
+2. The app searches LangCache for a semantically similar cached response
+3. If LangCache finds a match (cache hit), the cached response is returned immediately
+4. If no match is found (cache miss), the app generates an answer from the knowledge base, stores it in LangCache for future queries, and returns it
+
+LangCache handles embedding generation and vector similarity search. The knowledge base serves as a simulated LLM for this demo.
 
 ## Logging
 
@@ -118,8 +138,26 @@ REDIS_URL="redis://default:<password>@redis-#####.c###.us-west-2-#.ec2.redns.red
 
 Run `make test` to verify the connection.
 
+## Setting up LangCache
+
+LangCache is available on [Redis Cloud](https://redis.io/docs/latest/operate/rc/langcache/use-langcache/). After creating a LangCache service, grab these values from the Configuration page:
+
+1. The **LangCache API base URL**
+2. The **Cache ID**
+3. The **API key** (only shown at creation time)
+
+Add them to your `.env` file:
+
+```bash
+LANGCACHE_API_URL="https://your-langcache-host"
+LANGCACHE_CACHE_ID="your-cache-id"
+LANGCACHE_API_KEY="your-api-key"
+```
+
 ## Learn more
 
+- [Redis LangCache docs](https://redis.io/docs/latest/develop/ai/langcache/)
+- [LangCache API and SDK examples](https://redis.io/docs/latest/develop/ai/langcache/api-examples)
 - [Redis Documentation](https://redis.io/docs/latest/)
 - [Learn Redis](https://redis.io/learn/)
 - [Redis Demo Center](https://redis.io/demo-center/)

@@ -28,10 +28,17 @@ class Settings(BaseModel):
         min_length=1,
         validation_alias="LOG_STREAM_KEY",
     )
-    langcache_ttl_seconds: int = Field(
-        default=3600,
-        gt=0,
-        validation_alias="LANGCACHE_TTL_SECONDS",
+    langcache_api_url: str = Field(
+        default="",
+        validation_alias="LANGCACHE_API_URL",
+    )
+    langcache_cache_id: str = Field(
+        default="",
+        validation_alias="LANGCACHE_CACHE_ID",
+    )
+    langcache_api_key: str = Field(
+        default="",
+        validation_alias="LANGCACHE_API_KEY",
     )
     langcache_cache_threshold: float = Field(
         default=0.65,
@@ -39,11 +46,15 @@ class Settings(BaseModel):
         le=1.0,
         validation_alias="LANGCACHE_CACHE_THRESHOLD",
     )
-    langcache_knowledge_threshold: float = Field(
-        default=0.35,
-        ge=0.0,
-        le=1.0,
-        validation_alias="LANGCACHE_KNOWLEDGE_THRESHOLD",
+    openai_api_key: str = Field(
+        default="",
+        min_length=1,
+        validation_alias="OPENAI_API_KEY",
+    )
+    openai_model: str = Field(
+        default="gpt-5.4-mini",
+        min_length=1,
+        validation_alias="OPENAI_MODEL",
     )
 
     @field_validator("log_level", mode="before")

@@ -1,144 +1,69 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any, cast
-from uuid import uuid4
+from typing import cast
 
+from openai import AsyncOpenAI
 from redis.asyncio import Redis
 
-from app.components.langcache.embedding import cosine_similarity, embed_text
-from app.components.langcache.knowledge_base import choose_best_knowledge_answer
 from app.components.langcache.validator import AskResponse, CacheStats
 from app.config import get_settings
 from app.logger import get_component_logger
 from app.redis import get_client, reset_async_clients
+from langcache import LangCache
 
-CACHE_PREFIX = "langcache:entry:"
 STATS_KEY = "langcache:stats"
 
 logger = get_component_logger("langcache")
 langcache_store: LangCacheStore | None = None
+_lang_cache_client: LangCache | None = None
+_openai_client: AsyncOpenAI | None = None
 
 
 class LangCacheStore:
     def __init__(
         self,
+        lang_cache: LangCache,
         redis: Redis,
+        openai: AsyncOpenAI,
         *,
-        ttl_seconds: int,
-        cache_threshold: float,
-        knowledge_threshold: float,
+        similarity_threshold: float,
+        model: str,
     ) -> None:
+        self.lang_cache = lang_cache
         self.redis = redis
-        self.ttl_seconds = ttl_seconds
-        self.cache_threshold = cache_threshold
-        self.knowledge_threshold = knowledge_threshold
+        self.openai = openai
+        self.similarity_threshold = similarity_threshold
+        self.model = model
 
     async def _ensure_stats(self) -> None:
-        existing = await self.redis.hgetall(STATS_KEY)
+        existing = await self.redis.hgetall(STATS_KEY)  # type: ignore[misc]
         if existing:
             return
 
-        await self.redis.hset(
+        await self.redis.hset(  # type: ignore[misc]
             STATS_KEY,
             mapping={"requests": 0, "hits": 0, "misses": 0},
         )
 
-    async def reset(self) -> None:
-        keys = await self.redis.keys(f"{CACHE_PREFIX}*")
-        if len(keys) > 0:
-            await self.redis.delete(*keys)
+    async def _increment_stats(self, field: str, amount: int = 1) -> None:
+        await self.redis.hincrby(STATS_KEY, field, amount)  # type: ignore[misc]
 
+    async def reset(self) -> None:
+        await self.lang_cache.flush_async()
         await self.redis.delete(STATS_KEY)
         await self._ensure_stats()
-
-    async def _load_entries(self) -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        keys = await self.redis.keys(f"{CACHE_PREFIX}*")
-        if len(keys) == 0:
-            return entries
-
-        async with self.redis.pipeline() as pipeline:
-            for key in keys:
-                pipeline.hgetall(key)
-
-            results = await pipeline.execute()
-
-        for key, payload in zip(keys, results, strict=True):
-            if not payload:
-                continue
-
-            entry = dict(payload)
-            entry["cache_key"] = key
-            entry["question_embedding"] = _parse_embedding(
-                cast(str, entry["question_embedding"])
-            )
-            entry["hit_count"] = int(cast(str, entry.get("hit_count", "0")))
-            entry["similarity"] = float(cast(str, entry.get("similarity", "0")))
-            entries.append(entry)
-
-        return entries
-
-    async def _increment_stats(self, field: str, amount: int = 1) -> None:
-        await self.redis.hincrby(STATS_KEY, field, amount)
-
-    async def _save_entry(
-        self,
-        *,
-        question: str,
-        answer: str,
-        embedding: list[float],
-        matched_prompt: str | None,
-        similarity: float,
-    ) -> tuple[str, int]:
-        created_at = datetime.now(UTC).isoformat()
-        cache_key = f"{CACHE_PREFIX}{uuid4()}"
-
-        await self.redis.hset(
-            cache_key,
-            mapping={
-                "question": question,
-                "answer": answer,
-                "matched_prompt": matched_prompt or "",
-                "similarity": similarity,
-                "question_embedding": _serialize_embedding(embedding),
-                "created_at": created_at,
-                "updated_at": created_at,
-                "last_hit_at": "",
-                "hit_count": 0,
-            },
-        )
-        await self.redis.expire(cache_key, self.ttl_seconds)
-        return cache_key, 0
 
     async def answer_question(self, question: str) -> AskResponse:
         await self._ensure_stats()
         await self._increment_stats("requests")
 
-        question_embedding = embed_text(question)
-        best_entry: dict[str, Any] | None = None
-        best_similarity = 0.0
+        result = await self.lang_cache.search_async(
+            prompt=question,
+            similarity_threshold=self.similarity_threshold,
+        )
 
-        for entry in await self._load_entries():
-            similarity = cosine_similarity(
-                question_embedding,
-                cast(list[float], entry["question_embedding"]),
-            )
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_entry = entry
-
-        if best_entry is not None and best_similarity >= self.cache_threshold:
-            hit_count = int(cast(int | str, best_entry["hit_count"])) + 1
-            now = datetime.now(UTC).isoformat()
-            await self.redis.hset(
-                best_entry["cache_key"],
-                mapping={
-                    "hit_count": hit_count,
-                    "last_hit_at": now,
-                    "updated_at": now,
-                },
-            )
+        if result.data:
+            entry = result.data[0]
             await self._increment_stats("hits")
 
             logger.info(
@@ -146,92 +71,91 @@ class LangCacheStore:
                 extra={
                     "component": "langcache",
                     "question": question,
-                    "cacheKey": best_entry["cache_key"],
-                    "similarity": round(best_similarity, 3),
+                    "entryId": entry.id,
+                    "similarity": round(entry.similarity, 3),
                 },
             )
             return AskResponse(
                 question=question,
-                answer=cast(str, best_entry["answer"]),
+                answer=entry.response,
                 cache_hit=True,
                 source="cache",
-                matched_prompt=cast(str, best_entry["matched_prompt"]) or None,
-                similarity=round(best_similarity, 3),
-                cache_key=cast(str, best_entry["cache_key"]),
-                ttl_seconds=self.ttl_seconds,
-                hit_count=hit_count,
+                matched_prompt=entry.prompt,
+                similarity=round(entry.similarity, 3),
+                entry_id=entry.id,
             )
 
-        answer, matched_prompt, fallback_similarity = self._generate_answer(question)
-        cache_key, hit_count = await self._save_entry(
-            question=question,
-            answer=answer,
-            embedding=question_embedding,
-            matched_prompt=matched_prompt,
-            similarity=round(fallback_similarity, 3),
+        answer = await self._call_llm(question)
+
+        stored = await self.lang_cache.set_async(
+            prompt=question,
+            response=answer,
         )
         await self._increment_stats("misses")
 
         logger.info(
-            "semantic cache miss",
+            "semantic cache miss – answered via LLM",
             extra={
                 "component": "langcache",
                 "question": question,
-                "cacheKey": cache_key,
-                "matchedPrompt": matched_prompt,
-                "similarity": round(fallback_similarity, 3),
+                "entryId": stored.entry_id,
+                "model": self.model,
             },
         )
         return AskResponse(
             question=question,
             answer=answer,
             cache_hit=False,
-            source="fallback",
-            matched_prompt=matched_prompt,
-            similarity=round(fallback_similarity, 3),
-            cache_key=cache_key,
-            ttl_seconds=self.ttl_seconds,
-            hit_count=hit_count,
+            source="llm",
+            entry_id=stored.entry_id,
         )
 
-    def _generate_answer(self, question: str) -> tuple[str, str | None, float]:
-        entry, similarity = choose_best_knowledge_answer(question)
-        if entry is not None and similarity >= self.knowledge_threshold:
-            return entry.answer, entry.prompt, similarity
-
-        return (
-            "I could not find a close answer yet, but I have logged the question for follow-up.",
-            None,
-            similarity,
+    async def _call_llm(self, question: str) -> str:
+        response = await self.openai.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": question}],
         )
+        return response.choices[0].message.content or ""
 
     async def stats(self) -> CacheStats:
         await self._ensure_stats()
-        payload = await self.redis.hgetall(STATS_KEY)
+        payload = await self.redis.hgetall(STATS_KEY)  # type: ignore[misc]
         requests = int(cast(str, payload.get("requests", "0")))
         hits = int(cast(str, payload.get("hits", "0")))
         misses = int(cast(str, payload.get("misses", "0")))
-        entries = len(await self.redis.keys(f"{CACHE_PREFIX}*"))
         hit_rate = hits / requests if requests > 0 else 0.0
 
         return CacheStats(
             requests=requests,
             hits=hits,
             misses=misses,
-            entries=entries,
+            entries=hits + misses,
             hit_rate=round(hit_rate, 3),
         )
 
 
-def _serialize_embedding(embedding: list[float]) -> str:
-    return ",".join(f"{value:.6f}" for value in embedding)
+def get_lang_cache_client() -> LangCache:
+    global _lang_cache_client
+
+    if _lang_cache_client is None:
+        settings = get_settings()
+        _lang_cache_client = LangCache(
+            server_url=settings.langcache_api_url,
+            cache_id=settings.langcache_cache_id,
+            api_key=settings.langcache_api_key,
+        )
+
+    return _lang_cache_client
 
 
-def _parse_embedding(serialized_embedding: str) -> list[float]:
-    if len(serialized_embedding) == 0:
-        return []
+def get_openai_client() -> AsyncOpenAI:
+    global _openai_client
 
-    return [float(part) for part in serialized_embedding.split(",")]
+    if _openai_client is None:
+        settings = get_settings()
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    return _openai_client
 
 
 def get_langcache_store() -> LangCacheStore:
@@ -240,17 +164,20 @@ def get_langcache_store() -> LangCacheStore:
     if langcache_store is None:
         settings = get_settings()
         langcache_store = LangCacheStore(
+            get_lang_cache_client(),
             get_client(),
-            ttl_seconds=settings.langcache_ttl_seconds,
-            cache_threshold=settings.langcache_cache_threshold,
-            knowledge_threshold=settings.langcache_knowledge_threshold,
+            get_openai_client(),
+            similarity_threshold=settings.langcache_cache_threshold,
+            model=settings.openai_model,
         )
 
     return langcache_store
 
 
 def reset_langcache_store() -> None:
-    global langcache_store
+    global langcache_store, _lang_cache_client, _openai_client
 
     langcache_store = None
+    _lang_cache_client = None
+    _openai_client = None
     reset_async_clients()

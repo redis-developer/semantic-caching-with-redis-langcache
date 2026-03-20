@@ -25,15 +25,16 @@ class AskResponse(BaseModel):
     question: str
     answer: str
     cache_hit: bool = Field(serialization_alias="cacheHit")
-    source: Literal["cache", "fallback"]
+    source: Literal["cache", "llm"]
     matched_prompt: str | None = Field(
         default=None,
         serialization_alias="matchedPrompt",
     )
     similarity: float = 0.0
-    cache_key: str = Field(serialization_alias="cacheKey")
-    ttl_seconds: int = Field(serialization_alias="ttlSeconds")
-    hit_count: int = Field(serialization_alias="hitCount")
+    entry_id: str | None = Field(
+        default=None,
+        serialization_alias="entryId",
+    )
 
 
 class CacheStats(BaseModel):

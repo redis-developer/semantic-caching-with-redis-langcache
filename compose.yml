@@ -15,13 +15,11 @@ services:
     build: .
     ports:
       - "${PORT-8080}:${PORT-8080}"
-    environment:
-      APP_ENV: ${APP_ENV-production}
-      LOG_LEVEL: ${LOG_LEVEL-INFO}
-      LOG_STREAM_KEY: ${LOG_STREAM_KEY-logs}
-      PORT: ${PORT-8080}
     env_file:
-      - .env.docker
+      - .env
+    environment:
+      APP_ENV: production
+      REDIS_URL: ${REDIS_URL:-"redis://redis:6379"}
     restart: always
     depends_on:
       - redis
